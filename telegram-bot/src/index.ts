@@ -1,25 +1,40 @@
 import TelegramBot from "node-telegram-bot-api";
+import { ChatId } from "node-telegram-bot-api";
 import dotenv from "dotenv";
-import { insertChatIntoDB } from "./database.js";
+import {
+    getChatId,
+    getChatConversationState,
+    insertChatIntoDB,
+    setChatConversationState,
+} from "./database.js";
+import { ConversationState, Username, isUsername } from "./@types.js";
 
 dotenv.config();
 
 const token = process.env.TOKEN || "";
 const bot = new TelegramBot(token, { polling: true });
 
-type ChatId = string | number;
-type ConversationState = "DEFAULT" | "AWAITING_USERNAME";
-
-const userStates: Record<ChatId, ConversationState> = {
+const conversationStates: Record<ChatId, ConversationState> = {
     1000000: "DEFAULT",
+};
+
+const changeState = async (chat_id: ChatId, state: ConversationState) => {
+    await setChatConversationState(chat_id, state);
+    conversationStates[chat_id] = state;
 };
 
 bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
+    const chatUsername =
+        "@" + msg.chat.username ||
+        (msg.chat?.first_name || "") + " " + (msg.chat?.last_name || "");
     const text = msg.text;
-    const currentState = userStates[chatId] || "DEFAULT";
-    console.log(msg.chat.id + ": " + text);
-    insertChatIntoDB(msg.chat);
+    const currentState =
+        conversationStates[chatId] ||
+        (await getChatConversationState(chatId)) ||
+        "DEFAULT";
+
+    insertChatIntoDB(msg.chat, currentState);
 
     if (text === undefined) {
         await bot.sendMessage(chatId, "Отправьте текстовую команду");
@@ -36,43 +51,43 @@ bot.on("message", async (msg) => {
                 resize_keyboard: true,
             },
         });
+        await changeState(chatId, "DEFAULT");
     } else if (text === "/cancel") {
-        userStates[chatId] = "DEFAULT";
         await bot.sendMessage(chatId, "Отмена");
+        await changeState(chatId, "DEFAULT");
     } else if (currentState === "DEFAULT") {
         if (text === "Приватные касания") {
             await bot.sendMessage(chatId, "Пришли @username партнера");
-            userStates[chatId] = "AWAITING_USERNAME";
+            await changeState(chatId, "AWAITING_USERNAME");
+        } else if (text === "ГРУППОВЫЕ КАСАНИЯ") {
+            await bot.sendMessage(chatId, "Пришли @username партнера");
+            await changeState(chatId, "AWAITING_USERNAME");
+        } else {
+            await bot.sendMessage(chatId, "Выбери варианты из предложенного");
         }
     } else if (currentState === "AWAITING_USERNAME") {
-        if (text.startsWith("@")) {
-            // const username = text.substring(1);
-            // bot.getChatMember(chatId, username)
-            //     .then((chatMember) => {
-            //         if (chatMember.can_send_messages) {
-            //             bot.sendMessage(
-            //                 chatId,
-            //                 `Ожидаем партнера @${username}... `
-            //             );
-            //             bot.sendMessage(
-            //                 username,
-            //                 `К вам хочет прикоснуться @${
-            //                     msg.from.username || "неизвестный пользователь"
-            //                 } `
-            //             );
-            //         } else {
-            //             bot.sendMessage(
-            //                 chatId,
-            //                 `Ваш партнер должен начать чат с этим ботом, ожидаем...`
-            //             );
-            //         }
-            //     })
-            //     .catch((error) => {
-            //         bot.sendMessage(
-            //             chatId,
-            //             `Пользователь с именем @${username} не найден \n ${error}`
-            //         );
-            //     });
+        if (!isUsername(text)) {
+            await bot.sendMessage(chatId, "username должен начинаться с @");
+        } else {
+            changeState(chatId, "WAITING_FOR_PARTNER");
+            const partnerUsername = text;
+            const partnerChatId = await getChatId(partnerUsername);
+
+            if (!partnerChatId) {
+                await bot.sendMessage(
+                    chatId,
+                    "Пользователь должен начать диалог со мной, чтобы я мог отправлять ему сообщения. Скажите ему об этом"
+                );
+            } else {
+                await bot.sendMessage(chatId, "Ожидаем партнера...");
+                await bot.sendMessage(
+                    partnerChatId,
+                    `К вам хочет прикоснуться ${chatUsername}`
+                );
+            }
         }
     }
+
+    console.log(msg.chat.id + ": " + text);
+    console.log(conversationStates[chatId]);
 });
