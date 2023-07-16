@@ -7,7 +7,7 @@ import {
     insertChatIntoDB,
     setChatConversationState,
 } from "./database.js";
-import { ConversationState, Username, isUsername } from "./@types.js";
+import { ConversationState, Username, isUsername } from "./types.js";
 
 dotenv.config();
 

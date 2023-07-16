@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 import mysql from "mysql";
 import { Chat, ChatId } from "node-telegram-bot-api";
-import { ConversationState, Username } from "./@types.js";
+import { ConversationState, Username } from "./types.js";
 dotenv.config();
 
 const pool = mysql.createPool({
