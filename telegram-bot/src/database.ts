@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import mysql from "mysql";
-import { Chat } from "node-telegram-bot-api";
+import { Chat, ChatId } from "node-telegram-bot-api";
+import { ConversationState, Username } from "./@types.js";
 dotenv.config();
 
 const pool = mysql.createPool({
@@ -12,28 +13,88 @@ const pool = mysql.createPool({
     charset: "utf8mb4",
 });
 
-const chatExists = (chat_id: number | string): Promise<boolean> => {
+export const chatExists = (chat_id: number | string): Promise<boolean> => {
     return new Promise((resolve, reject) => {
-        const query = "SELECT COUNT(*) as count FROM Chat WHERE id = ?";
-
-        pool.query(query, [chat_id], (err, results) => {
-            if (err) {
-                console.log("Error executing query: ", err);
-                reject(err);
+        pool.query(
+            "SELECT COUNT(*) as count FROM Chat WHERE id = ?",
+            [chat_id],
+            (err, results: { count: number }[]) => {
+                if (err) {
+                    console.log("Error executing query: ", err);
+                    reject(err);
+                }
+                const count = results[0].count;
+                resolve(count > 0);
             }
-            const count = results[0].count;
-            resolve(count > 0);
-        });
+        );
     });
 };
 
-export const insertChatIntoDB = async (chat: Readonly<Chat>) => {
+export const getChatId = (username: Username): Promise<ChatId | undefined> => {
+    return new Promise((resolve, reject) => {
+        pool.query(
+            "SELECT id FROM Chat WHERE username = ?;",
+            [username.slice(1)],
+            (err, results) => {
+                if (err) {
+                    console.log("Error executing query: ", err);
+                    reject(err);
+                }
+                resolve(results[0]?.id);
+            }
+        );
+    });
+};
+
+type ConversationStateResults = { conversation_state: ConversationState }[];
+
+export const getChatConversationState = (
+    chat_id: ChatId
+): Promise<ConversationState> => {
+    return new Promise((resolve, reject) => {
+        pool.query(
+            "SELECT conversation_state FROM Chat WHERE id = ?;",
+            [chat_id],
+            (err, results: ConversationStateResults) => {
+                if (err) {
+                    console.log("Error executing the query: ", err);
+                    reject(err);
+                }
+                resolve(results[0].conversation_state);
+            }
+        );
+    });
+};
+
+export const setChatConversationState = (
+    chat_id: ChatId,
+    state: ConversationState
+): Promise<void> => {
+    return new Promise((resolve, reject) => {
+        pool.query(
+            "UPDATE Chat SET conversation_state = ? WHERE id = ?;",
+            [state, chat_id],
+            (err) => {
+                if (err) {
+                    console.log("Error executing the query: ", err);
+                    reject(err);
+                }
+                resolve();
+            }
+        );
+    });
+};
+
+export const insertChatIntoDB = async (
+    chat: Readonly<Chat>,
+    state: ConversationState
+) => {
     if (await chatExists(chat.id)) return;
 
-    const { id, username, first_name, last_name, bio } = chat;
-    const values = [id, username, first_name, last_name, bio];
+    const { id, username, first_name, last_name } = chat;
+    const values = [id, username, first_name, last_name, state];
     const query =
-        "INSERT INTO Chat (id, username, first_name, last_name, bio) " +
+        "INSERT INTO Chat (id, username, first_name, last_name, conversation_state) " +
         "VALUES (?, ?, ?, ?, ?);";
 
     pool.query(query, values, (err, results) => {
