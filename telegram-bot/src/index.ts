@@ -6,17 +6,17 @@ import {
     getChatConversationState,
     insertChatIntoDB,
     setChatConversationState,
+    getConversationStates,
 } from "./database.js";
-import { ConversationState, Username, isUsername } from "./types.js";
+import { ConversationState, isUsername } from "./types.js";
 
 dotenv.config();
 
 const token = process.env.TOKEN || "";
 const bot = new TelegramBot(token, { polling: true });
 
-const conversationStates: Record<ChatId, ConversationState> = {
-    1000000: "DEFAULT",
-};
+const conversationStates = await getConversationStates();
+console.log(conversationStates);
 
 const changeState = async (chat_id: ChatId, state: ConversationState) => {
     await setChatConversationState(chat_id, state);
@@ -69,7 +69,7 @@ bot.on("message", async (msg) => {
         if (!isUsername(text)) {
             await bot.sendMessage(chatId, "username должен начинаться с @");
         } else {
-            changeState(chatId, "WAITING_FOR_PARTNER");
+            await changeState(chatId, "WAITING_FOR_PARTNER");
             const partnerUsername = text;
             const partnerChatId = await getChatId(partnerUsername);
 
@@ -86,8 +86,10 @@ bot.on("message", async (msg) => {
                 );
             }
         }
+    } else if (currentState === "WAITING_FOR_PARTNER") {
+        await bot.sendMessage(chatId, "Ожидаем партнера. Прекратить - /cancel");
     }
 
     console.log(msg.chat.id + ": " + text);
-    console.log(conversationStates[chatId]);
+    console.log(currentState);
 });
