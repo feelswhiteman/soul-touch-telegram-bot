@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 import mysql from "mysql";
-import { Chat, ChatId } from "node-telegram-bot-api";
-import { ConversationState, Username } from "./types.js";
+import { ChatId } from "node-telegram-bot-api";
+import { ChatInfo, ConversationState, Username } from "./types.js";
 dotenv.config();
 
 const pool = mysql.createPool({
@@ -13,11 +13,28 @@ const pool = mysql.createPool({
     charset: "utf8mb4",
 });
 
-export const chatExists = (chat_id: number | string): Promise<boolean> => {
+export const chatIdExists = (chat_id: number | string): Promise<boolean> => {
     return new Promise((resolve, reject) => {
         pool.query(
             "SELECT COUNT(*) as count FROM Chat WHERE id = ?",
             [chat_id],
+            (err, results: { count: number }[]) => {
+                if (err) {
+                    console.log("Error executing query: ", err);
+                    reject(err);
+                }
+                const count = results[0].count;
+                resolve(count > 0);
+            }
+        );
+    });
+};
+
+export const usernameExists = (username: Username): Promise<boolean> => {
+    return new Promise((resolve, reject) => {
+        pool.query(
+            "SELECT COUNT(*) as count FROM Chat WHERE username = ?",
+            [username],
             (err, results: { count: number }[]) => {
                 if (err) {
                     console.log("Error executing query: ", err);
@@ -83,8 +100,8 @@ export const getConversationStates = (): Promise<
                     console.log("Error executing the query: ", err);
                     reject(err);
                 }
-                const states: Record<ChatId, ConversationState> = {}; 
-                results.forEach(result => {
+                const states: Record<ChatId, ConversationState> = {};
+                results.forEach((result) => {
                     states[result.id] = result.conversation_state;
                 });
                 resolve(states);
@@ -112,11 +129,16 @@ export const setChatConversationState = (
     });
 };
 
-export const insertChatIntoDB = async (
-    chat: Readonly<Chat>,
+export const insertChatInfoIntoDB = async (
+    chat: Readonly<ChatInfo>,
     state: ConversationState
 ) => {
-    if (await chatExists(chat.id)) return;
+    if (!chat.id && !chat.username) {
+        throw Error("Should be either username or chatId specified");
+    }
+
+    if (chat.id && (await chatIdExists(chat.id))) return;
+    if (chat.username && (await usernameExists(chat.username))) return;
 
     const { id, username, first_name, last_name } = chat;
     const values = [id, username, first_name, last_name, state];
