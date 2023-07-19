@@ -13,7 +13,7 @@ const pool = mysql.createPool({
     charset: "utf8mb4",
 });
 
-export const chatIdExists = (chat_id: number | string): Promise<boolean> => {
+export const chatIdExists = (chat_id: ChatId): Promise<boolean> => {
     return new Promise((resolve, reject) => {
         pool.query(
             "SELECT COUNT(*) as count FROM Chat WHERE id = ?",
@@ -130,24 +130,50 @@ export const setChatConversationState = (
 };
 
 export const insertChatInfoIntoDB = async (
-    chat: Readonly<ChatInfo>,
+    chat: ChatInfo,
     state: ConversationState
-) => {
-    if (!chat.id && !chat.username) {
-        throw Error("Should be either username or chatId specified");
-    }
+): Promise<void> => {
+    return new Promise(async (resolve, reject) => {
+        if (!chat.id && !chat.username) {
+            reject(new Error("Either username or chatId should be specified"));
+        }
 
-    if (chat.id && (await chatIdExists(chat.id))) return;
-    if (chat.username && (await usernameExists(chat.username))) return;
+        if (chat.id && (await chatIdExists(chat.id))) return;
+        if (chat.username && (await usernameExists(chat.username))) return;
 
-    const { id, username, first_name, last_name } = chat;
-    const values = [id, username, first_name, last_name, state];
-    const query =
-        "INSERT INTO Chat (id, username, first_name, last_name, conversation_state) " +
-        "VALUES (?, ?, ?, ?, ?);";
+        const { id, username, first_name, last_name } = chat;
+        const values = [id, username, first_name, last_name, state];
+        const query =
+            "INSERT INTO Chat (id, username, first_name, last_name, conversation_state) " +
+            "VALUES (?, ?, ?, ?, ?);";
 
-    pool.query(query, values, (err, results) => {
-        if (err) console.log("Error executing the query: ", err);
-        else console.log("Chat added successfully: ", results);
+        pool.query(query, values, (err, results) => {
+            if (err) console.log("Error executing the query: ", err);
+            else console.log("Chat added successfully: ", results);
+        });
+        resolve();
+    });
+};
+
+export const insertPendingUserIntoDB = async (
+    chat: ChatInfo
+): Promise<void> => {
+    return new Promise((resolve, reject) => {
+        if (!chat.username && !chat.id) {
+            reject(new Error("Either username or chatId should be specified"));
+        }
+        const { id, username, first_name, last_name } = chat;
+        const values = [id, username, first_name, last_name];
+
+        pool.query(
+            "INSERT INTO PendingUsers (chat_id, username, first_name, last_name) " +
+            "VALUES (?, ?, ?, ?);",
+            values,
+            (err, results) => {
+                if (err) console.log("Error executing the query: ", err);
+                else console.log("Chat added successfully: ", results);
+            }
+        );
+        resolve();
     });
 };
