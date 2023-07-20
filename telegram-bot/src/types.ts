@@ -23,6 +23,8 @@ export interface ChatInfo {
 }
 
 export type Username = `@${string}`;
-export const isUsername = (str: string): str is Username => {
-    return str.startsWith("@");
+export const isUsername = (any: any): any is Username => {
+    if (typeof any !== "string")
+        return false;
+    return any.startsWith("@");
 };
