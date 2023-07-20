@@ -83,33 +83,6 @@ export const getChatConversationState = (
     });
 };
 
-type ConversationStatesResults = {
-    id: ChatId;
-    conversation_state: ConversationState;
-}[];
-
-export const getConversationStates = (): Promise<
-    Record<ChatId, ConversationState>
-> => {
-    return new Promise((resolve, reject) => {
-        pool.query(
-            "SELECT id, conversation_state FROM Chat;",
-            [],
-            (err, results: ConversationStatesResults) => {
-                if (err) {
-                    console.log("Error executing the query: ", err);
-                    reject(err);
-                }
-                const states: Record<ChatId, ConversationState> = {};
-                results.forEach((result) => {
-                    states[result.id] = result.conversation_state;
-                });
-                resolve(states);
-            }
-        );
-    });
-};
-
 export const setChatConversationState = (
     chat_id: ChatId,
     state: ConversationState
