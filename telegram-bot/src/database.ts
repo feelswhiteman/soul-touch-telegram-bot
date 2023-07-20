@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 import mysql from "mysql";
-import { ChatId } from "node-telegram-bot-api";
-import { ChatInfo, ConversationState, Username } from "./types.js";
+import { Chat, ChatId, User } from "node-telegram-bot-api";
+import { ChatInfo, ConversationState, Username, isUsername } from "./types.js";
 dotenv.config();
 
 const pool = mysql.createPool({
@@ -128,25 +128,53 @@ export const insertChatInfoIntoDB = async (
     });
 };
 
+export const pendingUserExists = async (
+    usernameOrChatId: Username | ChatId
+): Promise<boolean> => {
+    return new Promise((resolve, reject) => {
+        let username: Username | undefined;
+        let chatId: ChatId | undefined;
+
+        if (isUsername(usernameOrChatId)) {
+            username = usernameOrChatId;
+        } else {
+            chatId = usernameOrChatId;
+        }
+
+        pool.query(
+            "SELECT COUNT(*) as count FROM PendingUsers WHERE chat_id = ? OR username = ?",
+            [chatId, username],
+            (err, results: { count: number }[]) => {
+                if (err) console.log("Error executing the query: ", err);
+                results[0].count === 0 ? resolve(false) : resolve(true);
+            }
+        );
+    });
+};
+
 export const insertPendingUserIntoDB = async (
     chat: ChatInfo
 ): Promise<void> => {
-    return new Promise((resolve, reject) => {
-        if (!chat.username && !chat.id) {
+    return new Promise(async (resolve, reject) => {
+        const { id, username, first_name, last_name } = chat;
+
+        if (!username && !id) {
             reject(new Error("Either username or chatId should be specified"));
         }
-        const { id, username, first_name, last_name } = chat;
-        const values = [id, username, first_name, last_name];
 
-        pool.query(
-            "INSERT INTO PendingUsers (chat_id, username, first_name, last_name) " +
-            "VALUES (?, ?, ?, ?);",
-            values,
-            (err, results) => {
-                if (err) console.log("Error executing the query: ", err);
-                else console.log("Chat added successfully: ", results);
-            }
-        );
-        resolve();
+        // !username && !id checks if one of this variables is assigned, 
+        // so (id ?? username) should be legal, but typescript doesn't think so
+        if (!(await pendingUserExists(id ?? username!))) {
+            pool.query(
+                "INSERT INTO PendingUsers (chat_id, username, first_name, last_name) " +
+                    "VALUES (?, ?, ?, ?);",
+                [id, username, first_name, last_name],
+                (err, results) => {
+                    if (err) console.log("Error executing the query: ", err);
+                    else console.log("Chat added successfully: ", results);
+                }
+            );
+            resolve();
+        }
     });
 };
