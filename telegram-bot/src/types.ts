@@ -7,6 +7,14 @@ export type ConversationState =
 
 export type ConnectionState = "WAITING" | "CONNECTED" | "CANCELED" | "DECLINED" | "CLOSED";
 
+export interface ConnectionTimelog {
+    time_requested: Date;
+    time_connected: Date;
+    time_canceled: Date;
+    time_declined: Date;
+    time_closed: Date;
+}
+
 export interface ChatInfo {
     id?: number | string;
     username?: Username;
