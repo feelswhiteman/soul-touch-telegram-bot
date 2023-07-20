@@ -2,13 +2,12 @@ import TelegramBot, { Chat, Contact, Message } from "node-telegram-bot-api";
 import { ChatId } from "node-telegram-bot-api";
 import dotenv from "dotenv";
 import {
+    chatIdExists,
     getChatId,
     getChatConversationState,
-    insertChatInfoIntoDB,
     setChatConversationState,
-    getConversationStates,
+    insertChatInfoIntoDB,
     insertPendingUserIntoDB,
-    chatIdExists,
 } from "./database.js";
 import { ChatInfo, ConversationState, Username, isUsername } from "./types.js";
 
@@ -16,13 +15,6 @@ dotenv.config();
 
 const token = process.env.TOKEN || "";
 const bot = new TelegramBot(token, { polling: true });
-
-const conversationStates = await getConversationStates();
-
-const changeState = async (chat_id: ChatId, state: ConversationState) => {
-    await setChatConversationState(chat_id, state);
-    conversationStates[chat_id] = state;
-};
 
 const chatToChatInfo = (chat: Chat): ChatInfo => {
     const { id, username, first_name, last_name } = chat;
@@ -38,10 +30,7 @@ const chatToChatInfo = (chat: Chat): ChatInfo => {
 bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
-    const currentState =
-        conversationStates[chatId] ||
-        (await getChatConversationState(chatId)) ||
-        "DEFAULT";
+    const currentState = (await getChatConversationState(chatId)) || "DEFAULT";
 
     console.log(`From ${chatId}: ${text}\nState: ${currentState}`);
     insertChatInfoIntoDB(chatToChatInfo(msg.chat), currentState);
@@ -58,7 +47,7 @@ bot.on("message", async (msg) => {
 
     if (text === "/cancel") {
         await bot.sendMessage(chatId, "Отмена");
-        await changeState(chatId, "DEFAULT");
+        await setChatConversationState(chatId, "DEFAULT");
         return;
     }
 
@@ -86,7 +75,7 @@ async function handleDefaultState(msg: Message) {
             chatId,
             "Пришли @username партнера или поделись его контактом"
         );
-        await changeState(chatId, "AWAITING_PARTNER_INFORMATION");
+        await setChatConversationState(chatId, "AWAITING_PARTNER_INFORMATION");
     } else if (text === "ГРУППОВЫЕ КАСАНИЯ") {
         throw Error("Not implemented yet");
     } else {
@@ -104,7 +93,7 @@ async function handleStartCommand(chatId: ChatId) {
             resize_keyboard: true,
         },
     });
-    await changeState(chatId, "DEFAULT");
+    await setChatConversationState(chatId, "DEFAULT");
 }
 
 async function handleContactInformation(msg: Message, contact: Contact) {
@@ -140,7 +129,7 @@ async function handleUsername(msg: Message, username: Username) {
     const partnerChatId = await getChatId(username);
 
     if (!partnerChatId) {
-        insertPendingUserIntoDB({ id: username, username: username });
+        insertPendingUserIntoDB({ username: username });
         await bot.sendMessage(
             msg.chat.id,
             `Пользователь ${username} должен начать диалог со мной, чтобы я мог отправлять ему сообщения. Скажите ему об этом`
@@ -157,8 +146,8 @@ async function handleUsername(msg: Message, username: Username) {
             " неизвестный пользователь"
         }`
     );
-    await changeState(msg.chat.id, "WAITING_FOR_CONFIRMATION");
-    await changeState(partnerChatId, "WAITING_FOR_CONFIRMATION");
+    await setChatConversationState(msg.chat.id, "WAITING_FOR_CONFIRMATION");
+    await setChatConversationState(partnerChatId, "WAITING_FOR_CONFIRMATION");
 }
 
 async function handleAwaitingPartnerInformationState(msg: Message) {
@@ -167,10 +156,10 @@ async function handleAwaitingPartnerInformationState(msg: Message) {
 
     if (msg.contact) {
         await handleContactInformation(msg, msg.contact);
-        await changeState(chatId, "WAITING_FOR_PARTNER");
+        await setChatConversationState(chatId, "WAITING_FOR_PARTNER");
     } else if (isUsername(text)) {
         await handleUsername(msg, text);
-        await changeState(chatId, "WAITING_FOR_PARTNER");
+        await setChatConversationState(chatId, "WAITING_FOR_PARTNER");
     } else {
         await bot.sendMessage(
             chatId,
