@@ -1,4 +1,9 @@
-import TelegramBot, { Chat, Contact, Message } from "node-telegram-bot-api";
+import TelegramBot, {
+    Chat,
+    Contact,
+    Message,
+    User,
+} from "node-telegram-bot-api";
 import { ChatId } from "node-telegram-bot-api";
 import dotenv from "dotenv";
 import {
@@ -8,6 +13,7 @@ import {
     setChatConversationState,
     insertChatInfoIntoDB,
     insertPendingUserIntoDB,
+    usernameExists,
 } from "./database.js";
 import { ChatInfo, ConversationState, Username, isUsername } from "./types.js";
 
@@ -35,7 +41,7 @@ bot.on("message", async (msg) => {
     console.log(`From ${chatId}: ${text}\nState: ${currentState}`);
     insertChatInfoIntoDB(chatToChatInfo(msg.chat), currentState);
 
-    if (text === undefined) {
+    if (text === undefined && !msg.contact) {
         await bot.sendMessage(chatId, "Отправьте текстовую команду");
         return;
     }
@@ -96,58 +102,51 @@ async function handleStartCommand(chatId: ChatId) {
     await setChatConversationState(chatId, "DEFAULT");
 }
 
-async function handleContactInformation(msg: Message, contact: Contact) {
-    const { first_name, last_name } = contact;
-    const partnerChatId = contact.user_id ?? "";
-    const partnerInfo: ChatInfo = {
-        id: partnerChatId,
-        first_name,
-        last_name,
-    };
-    if (!(await chatIdExists(partnerChatId))) {
-        insertPendingUserIntoDB(partnerInfo);
-        await bot.sendMessage(
-            msg.chat.id,
-            `Пользователь ${
-                (first_name ?? "") + " " + (last_name ?? "")
-            } должен начать диалог со мной, чтобы я мог отправлять ему сообщения. Скажите ему об этом`
-        );
-        return;
-    }
-    await bot.sendMessage(msg.chat.id, "Ожидаем партнера...");
-    await bot.sendMessage(
-        partnerChatId,
-        `К вам хочет прикоснуться ${
-            (msg.chat.username ||
-                msg.chat.first_name + " " + msg.chat.last_name) ??
-            " неизвестный пользователь"
-        }`
-    );
-}
+async function handleContactOrUsername(
+    msg: Message,
+    contactOrUsername: Contact | Username
+) {
+    let partnerUsername: Username | undefined;
+    let partnerChatId: ChatId | undefined;
+    let partnerInfo: ChatInfo | undefined;
 
-async function handleUsername(msg: Message, username: Username) {
-    const partnerChatId = await getChatId(username);
+    // TODO:
+    if (isUsername(contactOrUsername)) {
+        partnerUsername = contactOrUsername;
+        partnerChatId = await getChatId(partnerUsername);
+    } else {
+        const contact = contactOrUsername;
+        const { first_name, last_name } = contact;
+        partnerChatId = contact.user_id ?? "";
+        partnerInfo = {
+            id: partnerChatId,
+            first_name,
+            last_name,
+        };
+    }
 
     if (!partnerChatId) {
-        insertPendingUserIntoDB({ username: username });
+        insertPendingUserIntoDB({ username: partnerUsername });
         await bot.sendMessage(
             msg.chat.id,
-            `Пользователь ${username} должен начать диалог со мной, чтобы я мог отправлять ему сообщения. Скажите ему об этом`
+            "Ожидаем партнера...\n" +
+                `Пользователь ${
+                    partnerUsername ?? ""
+                } должен начать диалог со мной, чтобы я мог отправлять ему сообщения. Скажите ему об этом`
         );
-        return;
+    } else {
+        bot.sendMessage(msg.chat.id, "Ожидаем партнера...");
+        bot.sendMessage(
+            partnerChatId,
+            `К вам хочет прикоснуться ${
+                (msg.chat.username ||
+                    msg.chat.first_name + " " + msg.chat.last_name) ??
+                " неизвестный пользователь"
+            }`
+        );
+        setChatConversationState(partnerChatId, "WAITING_FOR_CONFIRMATION");
     }
-
-    await bot.sendMessage(msg.chat.id, "Ожидаем партнера...");
-    await bot.sendMessage(
-        partnerChatId,
-        `К вам хочет прикоснуться ${
-            (msg.chat.username ||
-                msg.chat.first_name + " " + msg.chat.last_name) ??
-            " неизвестный пользователь"
-        }`
-    );
-    await setChatConversationState(msg.chat.id, "WAITING_FOR_CONFIRMATION");
-    await setChatConversationState(partnerChatId, "WAITING_FOR_CONFIRMATION");
+    setChatConversationState(msg.chat.id, "WAITING_FOR_PARTNER");
 }
 
 async function handleAwaitingPartnerInformationState(msg: Message) {
@@ -155,16 +154,13 @@ async function handleAwaitingPartnerInformationState(msg: Message) {
     const text = msg.text ?? "";
 
     if (msg.contact) {
-        await handleContactInformation(msg, msg.contact);
-        await setChatConversationState(chatId, "WAITING_FOR_PARTNER");
+        await handleContactOrUsername(msg, msg.contact);
     } else if (isUsername(text)) {
-        await handleUsername(msg, text);
-        await setChatConversationState(chatId, "WAITING_FOR_PARTNER");
+        await handleContactOrUsername(msg, text);
     } else {
         await bot.sendMessage(
             chatId,
             "Пришлите @username партнера или поделись его контактом"
         );
-        return;
     }
 }
