@@ -4,6 +4,7 @@ import { ChatId } from "node-telegram-bot-api";
 import {
     ChatInfo,
     ConnectionState,
+    ConnectionTimelog,
     ConversationState,
     Username,
     isUsername,
@@ -22,7 +23,7 @@ const pool = mysql.createPool({
 export const chatIdExists = (chat_id: ChatId): Promise<boolean> => {
     return new Promise((resolve, reject) => {
         pool.query(
-            "SELECT COUNT(*) as count FROM Chat WHERE id = ?",
+            "SELECT COUNT(*) as count FROM Chat WHERE id = ?;",
             [chat_id],
             (err, results: { count: number }[]) => {
                 if (err) {
@@ -38,10 +39,13 @@ export const chatIdExists = (chat_id: ChatId): Promise<boolean> => {
 export const usernameExists = (username: Username): Promise<boolean> => {
     return new Promise((resolve, reject) => {
         pool.query(
-            "SELECT COUNT(*) as count FROM Chat WHERE username = ?",
+            "SELECT COUNT(*) as count FROM Chat WHERE username = ?;",
             [username],
             (err, results: { count: number }[]) => {
-                if (err) reject(err);
+                if (err) {
+                    console.log("Error executing query: ", err);
+                    reject(err);
+                }
                 const count = results[0].count;
                 resolve(count > 0);
             }
@@ -55,8 +59,11 @@ export const getChatId = (username: Username): Promise<ChatId | undefined> => {
             "SELECT id FROM Chat WHERE username = ?;",
             [username.slice(1)],
             (err, results) => {
-                if (err) reject(err);
-                resolve(results[0].id);
+                if (err) {
+                    console.log("Error executing query: ", err);
+                    reject(err);
+                }
+                resolve(results[0]?.id);
             }
         );
     });
@@ -72,7 +79,10 @@ export const getChatConversationState = (
             "SELECT conversation_state FROM Chat WHERE id = ?;",
             [chat_id],
             (err, results: ConversationStateResults) => {
-                if (err) reject(err);
+                if (err) {
+                    console.log("Error executing query: ", err);
+                    reject(err);
+                }
                 resolve(results[0].conversation_state);
             }
         );
@@ -88,8 +98,10 @@ export const setChatConversationState = (
             "UPDATE Chat SET conversation_state = ? WHERE id = ?;",
             [state, chat_id],
             (err, results) => {
-                if (err) reject(err);
-                console.log("PendingUser added successfully: ", results);
+                if (err) {
+                    console.log("Error executing query: ", err);
+                    reject(err);
+                }
                 resolve();
             }
         );
@@ -115,7 +127,10 @@ export const insertChatInfoIntoDB = async (
             "VALUES (?, ?, ?, ?, ?);";
 
         pool.query(query, values, (err, results) => {
-            if (err) reject(err);
+            if (err) {
+                console.log("Error executing query: ", err);
+                reject(err);
+            }
             console.log("Chat added successfully: ", results);
             resolve();
         });
@@ -136,11 +151,14 @@ export const pendingUserExists = async (
         }
 
         pool.query(
-            "SELECT COUNT(*) as count FROM PendingUsers WHERE chat_id = ? OR username = ?",
+            "SELECT COUNT(*) as count FROM PendingUsers WHERE chat_id = ? OR username = ?;",
             [chatId, username],
             (err, results: { count: number }[]) => {
-                if (err) reject(err);
-                resolve(results[0].count !== 0)
+                if (err) {
+                    console.log("Error executing query: ", err);
+                    reject(err);
+                }
+                resolve(results[0].count !== 0);
             }
         );
     });
@@ -164,7 +182,10 @@ export const insertPendingUserIntoDB = async (
                     "VALUES (?, ?, ?, ?);",
                 [id, username, first_name, last_name],
                 (err, results) => {
-                    if (err) reject(err);
+                    if (err) {
+                        console.log("Error executing query: ", err);
+                        reject(err);
+                    }
                     console.log("PendingUser added successfully: ", results);
                 }
             );
@@ -188,10 +209,13 @@ export const connectionExists = async (
         }
 
         pool.query(
-            "SELECT COUNT(*) as count FROM Connections WHERE user = ? AND partner = ?",
+            "SELECT COUNT(*) as count FROM Connections WHERE user = ? AND partner = ?;",
             [userChatId, partnerChatId || partnerUsername],
             (err, results: { count: number }[]) => {
-                if (err) reject(err);
+                if (err) {
+                    console.log("Error executing query: ", err);
+                    reject(err);
+                }
                 resolve(results[0].count !== 0);
             }
         );
@@ -202,14 +226,53 @@ export const insertConnectionIntoDB = async (
     user: ChatId,
     partner: ChatId | Username
 ): Promise<void> => {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
+        if (await connectionExists(user, partner)) resolve();
+
         pool.query(
-            "INSERT INTO Connections (user, partner)",
-            [user, partner],
+            "INSERT INTO Connections (user, partner, connection_state) VALUES (?, ?, ?);",
+            [user, partner, "UNDEFINED"],
             (err, results) => {
-                if (err) reject(err);
-                console.log("Connection added successfully", results);
-                resolve();
+                if (err) {
+                    console.log("Error executing query: ", err);
+                    reject(err);
+                }
+                console.log("Connection added successfully");
+
+                pool.query(
+                    "SELECT MAX(id) as lastId FROM Connections WHERE user = ? AND partner = ?;",
+                    [user, partner],
+                    (err, results) => {
+                        if (err) {
+                            console.log("Error executing query: ", err);
+                            reject(err);
+                        }
+                        const connectionId = results[0].lastId;
+                        if (!connectionId) {
+                            console.log("Error getting last inserted ID.");
+                            reject(
+                                new Error("Error getting last inserted ID.")
+                            );
+                            return;
+                        }
+
+                        pool.query(
+                            "INSERT INTO ConnectionTimelog (connection_id) VALUES(?);",
+                            [connectionId],
+                            (err, results) => {
+                                if (err) {
+                                    console.log("Error executing query: ", err);
+                                    reject(err);
+                                }
+                                console.log(
+                                    "ConnectionTimelog added successfully: ",
+                                    results
+                                );
+                                resolve();
+                            }
+                        );
+                    }
+                );
             }
         );
     });
@@ -222,12 +285,61 @@ export const setConnectionState = async (
 ): Promise<void> => {
     return new Promise((resolve, reject) => {
         pool.query(
-            "UPDATE Connections SET connection_state = ?" +
+            "UPDATE Connections SET connection_state = ? " +
                 "WHERE user = ? AND partner = ?",
             [state, user, partner],
             (err, results) => {
-                if (err) reject(err);
+                if (err) {
+                    console.log("Error executing query: ", err);
+                    reject(err);
+                }
                 console.log("Connection updated successfully", results);
+                resolve();
+            }
+        );
+    });
+};
+
+export const setConnectionTimelog = async (
+    user: ChatId,
+    partner: ChatId | Username,
+    timelog: ConnectionTimelog
+): Promise<void> => {
+    return new Promise<void>((resolve, reject) => {
+        const {
+            time_requested,
+            time_connected,
+            time_canceled,
+            time_declined,
+            time_closed,
+        } = timelog;
+        pool.query(
+            "UPDATE ConnectionTimelog " +
+                "SET " +
+                "time_requested = IFNULL(time_requested, ?), " +
+                "time_connected = IFNULL(time_connected, ?), " +
+                "time_canceled = IFNULL(time_canceled, ?), " +
+                "time_declined = IFNULL(time_declined, ?), " +
+                "time_closed = IFNULL(time_closed, ?) " +
+                "WHERE connection_id = (SELECT MAX(id) FROM Connections WHERE user = ? AND partner = ?);",
+            [
+                time_requested,
+                time_connected,
+                time_canceled,
+                time_declined,
+                time_closed,
+                user,
+                partner,
+            ],
+            (err, results) => {
+                if (err) {
+                    console.log("Error executing the query: ", err);
+                    reject(err);
+                }
+                console.log(
+                    "Connection timelog updated successfully: ",
+                    results
+                );
                 resolve();
             }
         );
