@@ -5,14 +5,20 @@ export type ConversationState =
     | "WAITING_FOR_CONFIRMATION"
     | "CONNECTED";
 
-export type ConnectionState = "WAITING" | "CONNECTED" | "CANCELED" | "DECLINED" | "CLOSED";
+export type ConnectionState =
+    | "WAITING"
+    | "CONNECTED"
+    | "CANCELED"
+    | "DECLINED"
+    | "CLOSED"
+    | "UNDEFINED";
 
 export interface ConnectionTimelog {
-    time_requested: Date;
-    time_connected: Date;
-    time_canceled: Date;
-    time_declined: Date;
-    time_closed: Date;
+    time_requested?: string;
+    time_connected?: string;
+    time_canceled?: string;
+    time_declined?: string;
+    time_closed?: string;
 }
 
 export interface ChatInfo {
@@ -24,7 +30,6 @@ export interface ChatInfo {
 
 export type Username = `@${string}`;
 export const isUsername = (any: any): any is Username => {
-    if (typeof any !== "string")
-        return false;
+    if (typeof any !== "string") return false;
     return any.startsWith("@");
 };
