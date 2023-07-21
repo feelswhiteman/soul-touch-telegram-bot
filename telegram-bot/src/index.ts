@@ -2,20 +2,17 @@ import TelegramBot, {
     Chat,
     Contact,
     Message,
-    User,
 } from "node-telegram-bot-api";
 import { ChatId } from "node-telegram-bot-api";
 import dotenv from "dotenv";
 import {
-    chatIdExists,
     getChatId,
     getChatConversationState,
     setChatConversationState,
     insertChatInfoIntoDB,
     insertPendingUserIntoDB,
-    usernameExists,
 } from "./database.js";
-import { ChatInfo, ConversationState, Username, isUsername } from "./types.js";
+import { ChatInfo, Username, isUsername } from "./types.js";
 
 dotenv.config();
 
@@ -63,7 +60,7 @@ bot.on("message", async (msg) => {
     }
 
     if (currentState === "AWAITING_PARTNER_INFORMATION") {
-        handleAwaitingPartnerInformationState(msg);
+        await handleAwaitingPartnerInformationState(msg);
         return;
     }
 
@@ -90,6 +87,7 @@ async function handleDefaultState(msg: Message) {
 }
 
 async function handleStartCommand(chatId: ChatId) {
+    setChatConversationState(chatId, "DEFAULT");
     await bot.sendMessage(chatId, "Выбирай", {
         reply_markup: {
             keyboard: [
@@ -99,7 +97,6 @@ async function handleStartCommand(chatId: ChatId) {
             resize_keyboard: true,
         },
     });
-    await setChatConversationState(chatId, "DEFAULT");
 }
 
 async function handleContactOrUsername(
@@ -110,7 +107,6 @@ async function handleContactOrUsername(
     let partnerChatId: ChatId | undefined;
     let partnerInfo: ChatInfo | undefined;
 
-    // TODO:
     if (isUsername(contactOrUsername)) {
         partnerUsername = contactOrUsername;
         partnerChatId = await getChatId(partnerUsername);
@@ -125,8 +121,10 @@ async function handleContactOrUsername(
         };
     }
 
+    setChatConversationState(msg.chat.id, "WAITING_FOR_PARTNER");
+
     if (!partnerChatId) {
-        insertPendingUserIntoDB({ username: partnerUsername });
+        insertPendingUserIntoDB(partnerInfo ?? { username: partnerUsername })
         await bot.sendMessage(
             msg.chat.id,
             "Ожидаем партнера...\n" +
@@ -135,7 +133,8 @@ async function handleContactOrUsername(
                 } должен начать диалог со мной, чтобы я мог отправлять ему сообщения. Скажите ему об этом`
         );
     } else {
-        bot.sendMessage(msg.chat.id, "Ожидаем партнера...");
+        setChatConversationState(partnerChatId, "WAITING_FOR_CONFIRMATION");
+        await bot.sendMessage(msg.chat.id, "Ожидаем партнера...");
         bot.sendMessage(
             partnerChatId,
             `К вам хочет прикоснуться ${
@@ -144,9 +143,7 @@ async function handleContactOrUsername(
                 " неизвестный пользователь"
             }`
         );
-        setChatConversationState(partnerChatId, "WAITING_FOR_CONFIRMATION");
     }
-    setChatConversationState(msg.chat.id, "WAITING_FOR_PARTNER");
 }
 
 async function handleAwaitingPartnerInformationState(msg: Message) {
@@ -160,7 +157,7 @@ async function handleAwaitingPartnerInformationState(msg: Message) {
     } else {
         await bot.sendMessage(
             chatId,
-            "Пришлите @username партнера или поделись его контактом"
+            "Пришли @username партнера или поделись его контактом"
         );
     }
 }

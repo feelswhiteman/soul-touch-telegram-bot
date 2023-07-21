@@ -1,7 +1,13 @@
 import dotenv from "dotenv";
 import mysql from "mysql";
-import { Chat, ChatId, User } from "node-telegram-bot-api";
-import { ChatInfo, ConversationState, Username, isUsername } from "./types.js";
+import { ChatId } from "node-telegram-bot-api";
+import {
+    ChatInfo,
+    ConnectionState,
+    ConversationState,
+    Username,
+    isUsername,
+} from "./types.js";
 dotenv.config();
 
 const pool = mysql.createPool({
@@ -23,8 +29,7 @@ export const chatIdExists = (chat_id: ChatId): Promise<boolean> => {
                     console.log("Error executing query: ", err);
                     reject(err);
                 }
-                const count = results[0].count;
-                resolve(count > 0);
+                resolve(results[0].count !== 0);
             }
         );
     });
@@ -36,10 +41,7 @@ export const usernameExists = (username: Username): Promise<boolean> => {
             "SELECT COUNT(*) as count FROM Chat WHERE username = ?",
             [username],
             (err, results: { count: number }[]) => {
-                if (err) {
-                    console.log("Error executing query: ", err);
-                    reject(err);
-                }
+                if (err) reject(err);
                 const count = results[0].count;
                 resolve(count > 0);
             }
@@ -53,11 +55,8 @@ export const getChatId = (username: Username): Promise<ChatId | undefined> => {
             "SELECT id FROM Chat WHERE username = ?;",
             [username.slice(1)],
             (err, results) => {
-                if (err) {
-                    console.log("Error executing query: ", err);
-                    reject(err);
-                }
-                resolve(results[0]?.id);
+                if (err) reject(err);
+                resolve(results[0].id);
             }
         );
     });
@@ -73,10 +72,7 @@ export const getChatConversationState = (
             "SELECT conversation_state FROM Chat WHERE id = ?;",
             [chat_id],
             (err, results: ConversationStateResults) => {
-                if (err) {
-                    console.log("Error executing the query: ", err);
-                    reject(err);
-                }
+                if (err) reject(err);
                 resolve(results[0].conversation_state);
             }
         );
@@ -91,11 +87,9 @@ export const setChatConversationState = (
         pool.query(
             "UPDATE Chat SET conversation_state = ? WHERE id = ?;",
             [state, chat_id],
-            (err) => {
-                if (err) {
-                    console.log("Error executing the query: ", err);
-                    reject(err);
-                }
+            (err, results) => {
+                if (err) reject(err);
+                console.log("PendingUser added successfully: ", results);
                 resolve();
             }
         );
@@ -121,10 +115,10 @@ export const insertChatInfoIntoDB = async (
             "VALUES (?, ?, ?, ?, ?);";
 
         pool.query(query, values, (err, results) => {
-            if (err) console.log("Error executing the query: ", err);
-            else console.log("Chat added successfully: ", results);
+            if (err) reject(err);
+            console.log("Chat added successfully: ", results);
+            resolve();
         });
-        resolve();
     });
 };
 
@@ -145,8 +139,8 @@ export const pendingUserExists = async (
             "SELECT COUNT(*) as count FROM PendingUsers WHERE chat_id = ? OR username = ?",
             [chatId, username],
             (err, results: { count: number }[]) => {
-                if (err) console.log("Error executing the query: ", err);
-                results[0].count === 0 ? resolve(false) : resolve(true);
+                if (err) reject(err);
+                resolve(results[0].count !== 0)
             }
         );
     });
@@ -162,19 +156,80 @@ export const insertPendingUserIntoDB = async (
             reject(new Error("Either username or chatId should be specified"));
         }
 
-        // !username && !id checks if one of this variables is assigned, 
-        // so (id ?? username) should be legal, but typescript doesn't think so
-        if (!(await pendingUserExists(id ?? username!))) {
+        // !username && !id checks if one of this variables is assigned,
+        // so (id || username) should be legal, but typescript doesn't think so
+        if (!(await pendingUserExists(id || username!))) {
             pool.query(
                 "INSERT INTO PendingUsers (chat_id, username, first_name, last_name) " +
                     "VALUES (?, ?, ?, ?);",
                 [id, username, first_name, last_name],
                 (err, results) => {
-                    if (err) console.log("Error executing the query: ", err);
-                    else console.log("Chat added successfully: ", results);
+                    if (err) reject(err);
+                    console.log("PendingUser added successfully: ", results);
                 }
             );
             resolve();
         }
+    });
+};
+
+export const connectionExists = async (
+    userChatId: ChatId,
+    partnerUsernameOrChatId: Username | ChatId
+): Promise<boolean> => {
+    return new Promise((resolve, reject) => {
+        let partnerUsername: Username | undefined;
+        let partnerChatId: ChatId | undefined;
+
+        if (isUsername(partnerUsernameOrChatId)) {
+            partnerUsername = partnerUsernameOrChatId;
+        } else {
+            partnerChatId = partnerUsernameOrChatId;
+        }
+
+        pool.query(
+            "SELECT COUNT(*) as count FROM Connections WHERE user = ? AND partner = ?",
+            [userChatId, partnerChatId || partnerUsername],
+            (err, results: { count: number }[]) => {
+                if (err) reject(err);
+                resolve(results[0].count !== 0);
+            }
+        );
+    });
+};
+
+export const insertConnectionIntoDB = async (
+    user: ChatId,
+    partner: ChatId | Username
+): Promise<void> => {
+    return new Promise((resolve, reject) => {
+        pool.query(
+            "INSERT INTO Connections (user, partner)",
+            [user, partner],
+            (err, results) => {
+                if (err) reject(err);
+                console.log("Connection added successfully", results);
+                resolve();
+            }
+        );
+    });
+};
+
+export const setConnectionState = async (
+    user: ChatId,
+    partner: ChatId | Username,
+    state: ConnectionState
+): Promise<void> => {
+    return new Promise((resolve, reject) => {
+        pool.query(
+            "UPDATE Connections SET connection_state = ?" +
+                "WHERE user = ? AND partner = ?",
+            [state, user, partner],
+            (err, results) => {
+                if (err) reject(err);
+                console.log("Connection updated successfully", results);
+                resolve();
+            }
+        );
     });
 };
