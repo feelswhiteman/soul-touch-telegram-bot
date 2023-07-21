@@ -1,18 +1,24 @@
-import TelegramBot, {
-    Chat,
-    Contact,
-    Message,
-} from "node-telegram-bot-api";
+import TelegramBot, { Chat, Contact, Message } from "node-telegram-bot-api";
 import { ChatId } from "node-telegram-bot-api";
 import dotenv from "dotenv";
+import Moment from "moment";
 import {
     getChatId,
     getChatConversationState,
     setChatConversationState,
     insertChatInfoIntoDB,
     insertPendingUserIntoDB,
+    insertConnectionIntoDB,
+    setConnectionState,
+    setConnectionTimelog,
 } from "./database.js";
-import { ChatInfo, Username, isUsername } from "./types.js";
+import {
+    ChatInfo,
+    ConnectionState,
+    ConnectionTimelog,
+    Username,
+    isUsername,
+} from "./types.js";
 
 dotenv.config();
 
@@ -70,7 +76,7 @@ bot.on("message", async (msg) => {
     }
 });
 
-async function handleDefaultState(msg: Message) {
+const handleDefaultState = async (msg: Message) => {
     const text = msg.text;
     const chatId = msg.chat.id;
     if (text === "Приватные касания") {
@@ -84,9 +90,9 @@ async function handleDefaultState(msg: Message) {
     } else {
         await bot.sendMessage(chatId, "Выбери варианты из предложенного");
     }
-}
+};
 
-async function handleStartCommand(chatId: ChatId) {
+const handleStartCommand = async (chatId: ChatId) => {
     setChatConversationState(chatId, "DEFAULT");
     await bot.sendMessage(chatId, "Выбирай", {
         reply_markup: {
@@ -97,12 +103,12 @@ async function handleStartCommand(chatId: ChatId) {
             resize_keyboard: true,
         },
     });
-}
+};
 
-async function handleContactOrUsername(
+const handleContactOrUsername = async (
     msg: Message,
     contactOrUsername: Contact | Username
-) {
+) => {
     let partnerUsername: Username | undefined;
     let partnerChatId: ChatId | undefined;
     let partnerInfo: ChatInfo | undefined;
@@ -124,7 +130,7 @@ async function handleContactOrUsername(
     setChatConversationState(msg.chat.id, "WAITING_FOR_PARTNER");
 
     if (!partnerChatId) {
-        insertPendingUserIntoDB(partnerInfo ?? { username: partnerUsername })
+        insertPendingUserIntoDB(partnerInfo ?? { username: partnerUsername });
         await bot.sendMessage(
             msg.chat.id,
             "Ожидаем партнера...\n" +
@@ -144,20 +150,38 @@ async function handleContactOrUsername(
             }`
         );
     }
-}
+    updateConnection(msg.chat.id, partnerChatId || partnerUsername!, "WAITING", {
+        time_requested: Moment().format('YYYY-MM-DD HH:mm:ss'),
+    });
+};
 
-async function handleAwaitingPartnerInformationState(msg: Message) {
+const handleAwaitingPartnerInformationState = async (msg: Message) => {
     const chatId = msg.chat.id;
     const text = msg.text ?? "";
+
+    if (!msg.contact && !isUsername(text)) {
+        await bot.sendMessage(
+            chatId,
+            "Пришли @username партнера или поделись его контактом"
+        );
+        return;
+    }
 
     if (msg.contact) {
         await handleContactOrUsername(msg, msg.contact);
     } else if (isUsername(text)) {
         await handleContactOrUsername(msg, text);
-    } else {
-        await bot.sendMessage(
-            chatId,
-            "Пришли @username партнера или поделись его контактом"
-        );
     }
-}
+};
+
+const updateConnection = async (
+    user: ChatId,
+    partner: ChatId | Username,
+    state: ConnectionState,
+    timelog: ConnectionTimelog
+) => {
+    await insertConnectionIntoDB(user, partner);
+    await setConnectionState(user, partner, state);
+    await setConnectionTimelog(user, partner, timelog);
+    console.log(timelog);
+};
