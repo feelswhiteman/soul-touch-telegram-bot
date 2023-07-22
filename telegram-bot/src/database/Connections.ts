@@ -4,7 +4,8 @@ import { Username, isUsername, ConnectionState } from "../types.js";
 
 export const connectionExists = async (
     userChatId: ChatId,
-    partnerUsernameOrChatId: Username | ChatId
+    partnerUsernameOrChatId: Username | ChatId,
+    state?: ConnectionState
 ): Promise<boolean> => {
     return new Promise((resolve, reject) => {
         let partnerUsername: Username | undefined;
@@ -17,8 +18,9 @@ export const connectionExists = async (
         }
 
         pool.query(
-            "SELECT COUNT(*) as count FROM Connections WHERE user = ? AND partner = ?;",
-            [userChatId, partnerChatId || partnerUsername],
+            "SELECT COUNT(*) as count FROM Connections WHERE user = ? AND partner = ? " +
+            (state ? `AND connection_state = ?;` : ";"),
+            [userChatId, partnerChatId || partnerUsername, state],
             (err, results: { count: number }[]) => {
                 if (err) {
                     console.log("Error executing query: ", err);
