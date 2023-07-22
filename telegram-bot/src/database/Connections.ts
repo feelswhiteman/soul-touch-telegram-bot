@@ -36,51 +36,60 @@ export const insertConnectionIntoDB = async (
 ): Promise<void> => {
     return new Promise(async (resolve, reject) => {
         if (await connectionExists(user, partner)) resolve();
-
         pool.query(
             "INSERT INTO Connections (user, partner, connection_state) VALUES (?, ?, ?);",
             [user, partner, "UNDEFINED"],
+            async (err, results) => {
+                if (err) {
+                    console.log("Error executing query: ", err);
+                    reject(err);
+                }
+                const connectionId = await getLastConnectionId(user, partner);
+                await assignConnectionTimelog(connectionId);
+                console.log("Connection added successfully");
+            }
+        );
+    });
+};
+
+export const getLastConnectionId = async (
+    user: ChatId,
+    partner: ChatId | Username
+): Promise<number> => {
+    return new Promise((resolve, reject) => {
+        pool.query(
+            "SELECT MAX(id) as lastId FROM Connections WHERE user = ? AND partner = ?;",
+            [user, partner],
             (err, results) => {
                 if (err) {
                     console.log("Error executing query: ", err);
                     reject(err);
                 }
-                console.log("Connection added successfully");
+                const connectionId = results[0].lastId;
+                if (!connectionId) {
+                    console.log("Error getting last inserted ID.");
+                    reject(new Error("Error getting last inserted ID."));
+                }
+                resolve(connectionId);
+            }
+        );
+    });
+};
 
-                pool.query(
-                    "SELECT MAX(id) as lastId FROM Connections WHERE user = ? AND partner = ?;",
-                    [user, partner],
-                    (err, results) => {
-                        if (err) {
-                            console.log("Error executing query: ", err);
-                            reject(err);
-                        }
-                        const connectionId = results[0].lastId;
-                        if (!connectionId) {
-                            console.log("Error getting last inserted ID.");
-                            reject(
-                                new Error("Error getting last inserted ID.")
-                            );
-                            return;
-                        }
-
-                        pool.query(
-                            "INSERT INTO ConnectionTimelog (connection_id) VALUES(?);",
-                            [connectionId],
-                            (err, results) => {
-                                if (err) {
-                                    console.log("Error executing query: ", err);
-                                    reject(err);
-                                }
-                                console.log(
-                                    "ConnectionTimelog added successfully: ",
-                                    results
-                                );
-                                resolve();
-                            }
-                        );
-                    }
-                );
+export const assignConnectionTimelog = async (
+    connectionId: number
+): Promise<void> => {
+    return new Promise((resolve, reject) => {
+        pool.query(
+            "INSERT INTO ConnectionTimelog (connection_id) VALUES(?);",
+            [connectionId],
+            (err, results) => {
+                if (err) {
+                    console.log("Error executing query: ", err);
+                    reject(err);
+                }
+                console.log("ConnectionTimelog added successfully: ", results);
+                resolve();
             }
         );
     });
