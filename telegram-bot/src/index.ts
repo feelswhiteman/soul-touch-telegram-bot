@@ -10,11 +10,11 @@ import {
 } from "./database/Chat.js";
 import { insertPendingUserIntoDB } from "./database/PendingUsers.js";
 import {
+    connectionExists,
     insertConnectionIntoDB,
     setConnectionState,
 } from "./database/Connections.js";
 import { setConnectionTimelog } from "./database/ConnectionTimelog.js";
-
 import {
     ChatInfo,
     ConnectionState,
@@ -52,15 +52,21 @@ bot.on("message", async (msg) => {
         return;
     }
 
-    if (text === "/start" || text === "/touch") {
-        await handleStartCommand(chatId);
+    if (text === "/cancel") {
+        // TODO: On cancel change state in database
+        await bot.sendMessage(chatId, "Привет, я бот для касаний.\n/touch - Прикоснуться к кому-то\n");
+        await setChatConversationState(chatId, "DEFAULT");
         return;
     }
 
-    if (text === "/cancel") {
-        // TODO: On cancel change state in database
-        await bot.sendMessage(chatId, "Отмена");
-        await setChatConversationState(chatId, "DEFAULT");
+
+    if (currentState === "WAITING_FOR_PARTNER") {
+        await bot.sendMessage(chatId, "Ожидаем партнера... Чтобы прекратить - /cancel");
+        return;
+    }
+
+    if (text === "/start" || text === "/touch") {
+        await handleStartCommand(chatId);
         return;
     }
 
@@ -74,10 +80,6 @@ bot.on("message", async (msg) => {
         return;
     }
 
-    if (currentState === "WAITING_FOR_PARTNER") {
-        await bot.sendMessage(chatId, "Ожидаем партнера. Прекратить - /cancel");
-        return;
-    }
 });
 
 const handleDefaultState = async (msg: Message) => {
@@ -90,7 +92,10 @@ const handleDefaultState = async (msg: Message) => {
         );
         await setChatConversationState(chatId, "AWAITING_PARTNER_INFORMATION");
     } else if (text === "ГРУППОВЫЕ КАСАНИЯ") {
-        throw Error("Not implemented yet");
+        await bot.sendMessage(
+            chatId,
+            "Еще в разработке..."
+        );
     } else {
         await bot.sendMessage(chatId, "Выбери варианты из предложенного");
     }
@@ -98,7 +103,7 @@ const handleDefaultState = async (msg: Message) => {
 
 const handleStartCommand = async (chatId: ChatId) => {
     setChatConversationState(chatId, "DEFAULT");
-    await bot.sendMessage(chatId, "Выбирай", {
+    await bot.sendMessage(chatId, "Приватные касания - укажи человека и мы наладим с ним связь.\nГрупповые касания еще в разработке...", {
         reply_markup: {
             keyboard: [
                 [{ text: "Приватные касания" }],
