@@ -7,11 +7,14 @@ import {
     getChatConversationState,
     setChatConversationState,
     insertChatInfoIntoDB,
-    insertPendingUserIntoDB,
+} from "./database/Chat.js";
+import { insertPendingUserIntoDB } from "./database/PendingUsers.js";
+import {
     insertConnectionIntoDB,
     setConnectionState,
-    setConnectionTimelog,
-} from "./database.js";
+} from "./database/Connections.js";
+import { setConnectionTimelog } from "./database/ConnectionTimelog.js";
+
 import {
     ChatInfo,
     ConnectionState,
@@ -49,12 +52,13 @@ bot.on("message", async (msg) => {
         return;
     }
 
-    if (text === "/start") {
+    if (text === "/start" || text === "/touch") {
         await handleStartCommand(chatId);
         return;
     }
 
     if (text === "/cancel") {
+        // TODO: On cancel change state in database
         await bot.sendMessage(chatId, "Отмена");
         await setChatConversationState(chatId, "DEFAULT");
         return;
@@ -150,9 +154,14 @@ const handleContactOrUsername = async (
             }`
         );
     }
-    updateConnection(msg.chat.id, partnerChatId || partnerUsername!, "WAITING", {
-        time_requested: Moment().format('YYYY-MM-DD HH:mm:ss'),
-    });
+    updateConnection(
+        msg.chat.id,
+        partnerChatId || partnerUsername!,
+        "WAITING",
+        {
+            time_requested: Moment().format("YYYY-MM-DD HH:mm:ss"),
+        }
+    );
 };
 
 const handleAwaitingPartnerInformationState = async (msg: Message) => {
