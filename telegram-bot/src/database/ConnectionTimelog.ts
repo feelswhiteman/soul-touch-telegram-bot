@@ -1,13 +1,13 @@
 import { pool } from "./pool.js";
-import { ChatId } from "node-telegram-bot-api";
-import { Username, ConnectionTimelog } from "../types.js";
+import { ConnectionTimelog, UserInfo } from "../types.js";
+import { getIdFromUser } from "./User.js";
 
 export const setConnectionTimelog = async (
-    user: ChatId,
-    partner: ChatId | Username,
+    userInfo: UserInfo,
+    partnerInfo: UserInfo,
     timelog: ConnectionTimelog
 ): Promise<void> => {
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<void>(async (resolve, reject) => {
         const {
             time_requested,
             time_connected,
@@ -15,6 +15,10 @@ export const setConnectionTimelog = async (
             time_declined,
             time_closed,
         } = timelog;
+
+        const userId = await getIdFromUser(userInfo);
+        const partnerId = await getIdFromUser(partnerInfo);
+
         pool.query(
             "UPDATE ConnectionTimelog " +
                 "SET " +
@@ -30,8 +34,8 @@ export const setConnectionTimelog = async (
                 time_canceled,
                 time_declined,
                 time_closed,
-                user,
-                partner,
+                userId,
+                partnerId
             ],
             (err, results) => {
                 if (err) {
