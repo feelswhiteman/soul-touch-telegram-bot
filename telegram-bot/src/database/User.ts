@@ -35,8 +35,11 @@ export const usernameExists = (username: Username): Promise<boolean> => {
     });
 };
 
-export const getUserId = (username: Username): Promise<ChatId | undefined> => {
+export const getUserId = (userInfo: UserInfo): Promise<ChatId | undefined> => {
     return new Promise((resolve, reject) => {
+        const { username } = userInfo;
+        if (!username) throw Error("Should be username specified");
+
         pool.query(
             "SELECT user_id FROM User WHERE username = ?;",
             [username.slice(1)],
@@ -114,6 +117,24 @@ export const insertUserInfoIntoDB = async (
                 }
                 console.log("User added successfully: ", results);
                 resolve();
+            }
+        );
+    });
+};
+
+export const getIdFromUser = async (userInfo: UserInfo): Promise<number | undefined> => {
+    return new Promise<number | undefined>((resolve, reject) => {
+        const { user_id, username } = userInfo;
+        pool.query(
+            "SELECT id FROM User WHERE user_id = ? OR username = ?;",
+            [user_id, username],
+            (err, results: { id: number | undefined }[]) => {
+                if (err) {
+                    console.log("Error executing query: ", err);
+                    reject(err);
+                }
+                console.log("Connection updated successfully", results);
+                resolve(results[0]?.id);
             }
         );
     });
