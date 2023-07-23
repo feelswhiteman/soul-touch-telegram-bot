@@ -7,6 +7,7 @@ import {
     getUserConversationState,
     setUserConversationState,
     insertUserInfoIntoDB,
+    updateUserInfo,
 } from "./database/User.js";
 import {
     deletePendingUser,
@@ -34,7 +35,6 @@ const bot = new TelegramBot(token, { polling: true });
 bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
-    const currentState = (await getUserConversationState(chatId)) || "DEFAULT";
 
     const userInfo: UserInfo = {
         user_id: msg.chat.id,
@@ -43,12 +43,25 @@ bot.on("message", async (msg) => {
     };
     if (msg.from?.username) userInfo.username = `@${msg.from?.username}`;
 
+    const currentState =
+        (await getUserConversationState(userInfo)) || "DEFAULT";
+
     console.log(`From ${chatId}: ${text}\nState: ${currentState}`);
     insertUserInfoIntoDB(userInfo, currentState);
 
-    if (await pendingUserExists(userInfo)) {
-        await bot.sendMessage(chatId, "Вас ждут!");
-        await deletePendingUser(userInfo);
+    // if (await pendingUserExists(userInfo)) {
+    //     await bot.sendMessage(chatId, "К тебе хотят прикоснуться! /list ");
+    //     deletePendingUser(userInfo);
+    // }
+
+    if (currentState === "WAITING_FOR_CONVERSATION_TO_START") {
+        updateUserInfo(userInfo);
+        await setUserConversationState(chatId, "DEFAULT");
+        await bot.sendMessage(
+            chatId,
+            "Привет, к тебе хотят прикоснуться. /list - список желающих"
+        );
+        return;
     }
 
     if (text === undefined && !msg.contact) {
@@ -75,10 +88,11 @@ bot.on("message", async (msg) => {
                 reply_markup: {
                     inline_keyboard: [
                         [
-                            { text: "Google", callback_data: "Google" },
-                            { text: "Google", callback_data: "Google" },
+                            {
+                                text: "Not implemented yet",
+                                callback_data: "Google",
+                            },
                         ],
-                        [{ text: "Google", callback_data: "Google" }],
                     ],
                 },
             }
@@ -121,7 +135,12 @@ const handleDefaultState = async (msg: Message) => {
     } else if (text === "ГРУППОВЫЕ КАСАНИЯ") {
         await bot.sendMessage(chatId, "Еще в разработке...");
     } else {
-        await bot.sendMessage(chatId, "Выбери варианты из предложенного");
+        await bot.sendMessage(
+            chatId,
+            "/touch - Начать трогать человека.\n" +
+                "/list - Показать все запросы на касания\n" +
+                "/cancel - Прекратить трогать и вернуться в начало\n"
+        );
     }
 };
 
@@ -129,7 +148,7 @@ const handleStartCommand = async (chatId: ChatId) => {
     setUserConversationState(chatId, "DEFAULT");
     await bot.sendMessage(
         chatId,
-        "Приватные касания - укажи человека и мы наладим с ним связь.\nГрупповые касания еще в разработке...",
+        "Приватные касания - укажи человека и мы попытаемся прикоснуться к нему.\nГрупповые касания еще в разработке...",
         {
             reply_markup: {
                 keyboard: [
@@ -154,6 +173,13 @@ const handleContactOrUsername = async (
     if (isUsername(contactOrUsername)) {
         partnerInfo.username = contactOrUsername;
         partnerInfo.user_id = await getUserId(partnerInfo);
+        if (partnerInfo.username === username) {
+            bot.sendMessage(
+                user_id,
+                "Это не место для того чтобы трогать себя, лучше укажи партнера"
+            );
+            return;
+        }
     } else {
         const contact = contactOrUsername;
         const { first_name, last_name } = contact;
@@ -162,35 +188,37 @@ const handleContactOrUsername = async (
         partnerInfo.last_name = last_name;
     }
 
-    setUserConversationState(user_id, "WAITING_FOR_PARTNER");
+    await setUserConversationState(user_id, "WAITING_FOR_PARTNER");
 
     if (!partnerInfo.user_id) {
-        insertPendingUserIntoDB(partnerInfo);
         await bot.sendMessage(
             user_id,
-            "Невозомжно прикоснуться к партнеру.\n" +
+            "Ожидаем партнера...\n" +
                 `Пользователь ${
                     partnerInfo.username ?? ""
-                } должен начать диалог со мной, чтобы я мог отправлять ему сообщения. Скажите ему об этом`
+                } должен начать диалог со мной, чтобы я мог отправлять ему сообщения. Скажи ему об этом.`
         );
-        setUserConversationState(user_id, "AWAITING_PARTNER_INFORMATION");
+        await insertUserInfoIntoDB(
+            partnerInfo,
+            "WAITING_FOR_CONVERSATION_TO_START"
+        );
     } else {
-        setUserConversationState(
+        await bot.sendMessage(user_id, "Ожидаем партнера...");
+        await setUserConversationState(
             partnerInfo.user_id,
             "WAITING_FOR_CONFIRMATION"
         );
-        await bot.sendMessage(user_id, "Ожидаем партнера...");
-        bot.sendMessage(
+        await bot.sendMessage(
             partnerInfo.user_id,
             `К вам хочет прикоснуться ${
                 (username || first_name + " " + last_name) ??
                 " неизвестный пользователь"
             }`
         );
-        updateConnection(userInfo, partnerInfo, "WAITING", {
-            time_requested: Moment().format("YYYY-MM-DD HH:mm:ss"),
-        });
     }
+    await updateConnection(userInfo, partnerInfo, "WAITING", {
+        time_requested: Moment().format("YYYY-MM-DD HH:mm:ss"),
+    });
 };
 
 const handleAwaitingPartnerInformationState = async (msg: Message) => {

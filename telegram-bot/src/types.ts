@@ -3,6 +3,7 @@ export type ConversationState =
     | "AWAITING_PARTNER_INFORMATION"
     | "WAITING_FOR_PARTNER"
     | "WAITING_FOR_CONFIRMATION"
+    | "WAITING_FOR_CONVERSATION_TO_START"
     | "CONNECTED";
 
 export type ConnectionState =

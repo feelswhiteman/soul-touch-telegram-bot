@@ -112,7 +112,7 @@ export const setConnectionState = async (
 
         pool.query(
             "UPDATE Connections SET connection_state = ? " +
-                "WHERE user = ? AND partner = ?",
+                "WHERE user = ? AND partner = ?;",
             [state, userId, partnerId],
             (err, results) => {
                 if (err) {
