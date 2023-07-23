@@ -3,20 +3,23 @@ import { ChatId } from "node-telegram-bot-api";
 import dotenv from "dotenv";
 import Moment from "moment";
 import {
-    getChatId,
-    getChatConversationState,
-    setChatConversationState,
-    insertChatInfoIntoDB,
+    getUserId,
+    getUserConversationState,
+    setUserConversationState,
+    insertUserInfoIntoDB,
 } from "./database/User.js";
-import { insertPendingUserIntoDB } from "./database/PendingUsers.js";
 import {
-    connectionExists,
+    deletePendingUser,
+    insertPendingUserIntoDB,
+    pendingUserExists,
+} from "./database/PendingUsers.js";
+import {
     insertConnectionIntoDB,
     setConnectionState,
 } from "./database/Connections.js";
 import { setConnectionTimelog } from "./database/ConnectionTimelog.js";
 import {
-    ChatInfo,
+    UserInfo,
     ConnectionState,
     ConnectionTimelog,
     Username,
@@ -28,24 +31,25 @@ dotenv.config();
 const token = process.env.TOKEN || "";
 const bot = new TelegramBot(token, { polling: true });
 
-const chatToChatInfo = (chat: Chat): ChatInfo => {
-    const { id, username, first_name, last_name } = chat;
-    const chatInfo: ChatInfo = {
-        user_id: id,
-        first_name,
-        last_name,
-    };
-    if (username) chatInfo.username = `@${username}`;
-    return chatInfo;
-};
-
 bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
-    const currentState = (await getChatConversationState(chatId)) || "DEFAULT";
+    const currentState = (await getUserConversationState(chatId)) || "DEFAULT";
+
+    const userInfo: UserInfo = {
+        user_id: msg.chat.id,
+        first_name: msg.from?.first_name,
+        last_name: msg.from?.last_name,
+    };
+    if (msg.from?.username) userInfo.username = `@${msg.from?.username}`;
 
     console.log(`From ${chatId}: ${text}\nState: ${currentState}`);
-    insertChatInfoIntoDB(chatToChatInfo(msg.chat), currentState);
+    insertUserInfoIntoDB(userInfo, currentState);
+
+    if (await pendingUserExists(userInfo)) {
+        await bot.sendMessage(chatId, "Вас ждут!");
+        await deletePendingUser(userInfo);
+    }
 
     if (text === undefined && !msg.contact) {
         await bot.sendMessage(chatId, "Отправьте текстовую команду");
@@ -58,7 +62,7 @@ bot.on("message", async (msg) => {
             chatId,
             "Привет, я бот для касаний.\n/touch - Прикоснуться к кому-то\n"
         );
-        await setChatConversationState(chatId, "DEFAULT");
+        await setUserConversationState(chatId, "DEFAULT");
         return;
     }
 
@@ -74,9 +78,7 @@ bot.on("message", async (msg) => {
                             { text: "Google", callback_data: "Google" },
                             { text: "Google", callback_data: "Google" },
                         ],
-                        [
-                            { text: "Google", callback_data: "Google" },
-                        ],
+                        [{ text: "Google", callback_data: "Google" }],
                     ],
                 },
             }
@@ -115,7 +117,7 @@ const handleDefaultState = async (msg: Message) => {
             chatId,
             "Пришли @username партнера или поделись его контактом"
         );
-        await setChatConversationState(chatId, "AWAITING_PARTNER_INFORMATION");
+        await setUserConversationState(chatId, "AWAITING_PARTNER_INFORMATION");
     } else if (text === "ГРУППОВЫЕ КАСАНИЯ") {
         await bot.sendMessage(chatId, "Еще в разработке...");
     } else {
@@ -124,7 +126,7 @@ const handleDefaultState = async (msg: Message) => {
 };
 
 const handleStartCommand = async (chatId: ChatId) => {
-    setChatConversationState(chatId, "DEFAULT");
+    setUserConversationState(chatId, "DEFAULT");
     await bot.sendMessage(
         chatId,
         "Приватные касания - укажи человека и мы наладим с ним связь.\nГрупповые касания еще в разработке...",
@@ -146,11 +148,11 @@ const handleContactOrUsername = async (
 ) => {
     let partnerUsername: Username | undefined;
     let partnerChatId: ChatId | undefined;
-    let partnerInfo: ChatInfo | undefined;
+    let partnerInfo: UserInfo | undefined;
 
     if (isUsername(contactOrUsername)) {
         partnerUsername = contactOrUsername;
-        partnerChatId = await getChatId(partnerUsername);
+        partnerChatId = await getUserId(partnerUsername);
     } else {
         const contact = contactOrUsername;
         const { first_name, last_name } = contact;
@@ -162,7 +164,7 @@ const handleContactOrUsername = async (
         };
     }
 
-    setChatConversationState(msg.chat.id, "WAITING_FOR_PARTNER");
+    setUserConversationState(msg.chat.id, "WAITING_FOR_PARTNER");
 
     if (!partnerChatId) {
         insertPendingUserIntoDB(partnerInfo ?? { username: partnerUsername });
@@ -174,7 +176,7 @@ const handleContactOrUsername = async (
                 } должен начать диалог со мной, чтобы я мог отправлять ему сообщения. Скажите ему об этом`
         );
     } else {
-        setChatConversationState(partnerChatId, "WAITING_FOR_CONFIRMATION");
+        setUserConversationState(partnerChatId, "WAITING_FOR_CONFIRMATION");
         await bot.sendMessage(msg.chat.id, "Ожидаем партнера...");
         bot.sendMessage(
             partnerChatId,

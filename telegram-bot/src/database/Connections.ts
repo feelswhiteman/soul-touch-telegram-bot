@@ -1,6 +1,6 @@
 import { pool } from "./pool.js";
 import { ChatId } from "node-telegram-bot-api";
-import { Username, isUsername, ConnectionState, ChatInfo } from "../types.js";
+import { Username, isUsername, ConnectionState, UserInfo } from "../types.js";
 
 export const connectionExists = async (
     userChatId: ChatId,
@@ -119,7 +119,7 @@ export const setConnectionState = async (
     });
 };
 
-export const getAllConnections = async (): Promise<ChatInfo[]> => {
+export const getAllConnections = async (): Promise<UserInfo[]> => {
     return new Promise((resolve, reject) => {
 
     });

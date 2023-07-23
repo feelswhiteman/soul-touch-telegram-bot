@@ -1,8 +1,8 @@
 import { pool } from "./pool.js";
 import { ChatId } from "node-telegram-bot-api";
-import { Username, ConversationState, ChatInfo } from "../types.js";
+import { Username, ConversationState, UserInfo } from "../types.js";
 
-export const chatIdExists = (chat_id: ChatId): Promise<boolean> => {
+export const userIdExists = (chat_id: ChatId): Promise<boolean> => {
     return new Promise((resolve, reject) => {
         pool.query(
             "SELECT COUNT(*) as count FROM User WHERE user_id = ?;",
@@ -35,7 +35,7 @@ export const usernameExists = (username: Username): Promise<boolean> => {
     });
 };
 
-export const getChatId = (username: Username): Promise<ChatId | undefined> => {
+export const getUserId = (username: Username): Promise<ChatId | undefined> => {
     return new Promise((resolve, reject) => {
         pool.query(
             "SELECT user_id FROM User WHERE username = ?;",
@@ -52,7 +52,7 @@ export const getChatId = (username: Username): Promise<ChatId | undefined> => {
 };
 
 type ConversationStateResults = { conversation_state: ConversationState }[];
-export const getChatConversationState = (
+export const getUserConversationState = (
     chat_id: ChatId
 ): Promise<ConversationState> => {
     return new Promise((resolve, reject) => {
@@ -70,7 +70,7 @@ export const getChatConversationState = (
     });
 };
 
-export const setChatConversationState = (
+export const setUserConversationState = (
     chat_id: ChatId,
     state: ConversationState
 ): Promise<void> => {
@@ -89,31 +89,32 @@ export const setChatConversationState = (
     });
 };
 
-export const insertChatInfoIntoDB = async (
-    chat: ChatInfo,
+export const insertUserInfoIntoDB = async (
+    userInfo: UserInfo,
     state: ConversationState
 ): Promise<void> => {
     return new Promise(async (resolve, reject) => {
-        if (!chat.user_id && !chat.username) {
+        const { user_id, username, first_name, last_name } = userInfo;
+
+        if (!user_id && !username) {
             reject(new Error("Either username or chatId should be specified"));
         }
 
-        if (chat.user_id && (await chatIdExists(chat.user_id))) return;
-        if (chat.username && (await usernameExists(chat.username))) return;
+        if (user_id && (await userIdExists(user_id))) return;
+        if (username && (await usernameExists(username))) return;
 
-        const { user_id: id, username, first_name, last_name } = chat;
-        const values = [id, username, first_name, last_name, state];
-        const query =
+        pool.query(
             "INSERT INTO User (user_id, username, first_name, last_name, conversation_state) " +
-            "VALUES (?, ?, ?, ?, ?);";
-
-        pool.query(query, values, (err, results) => {
-            if (err) {
-                console.log("Error executing query: ", err);
-                reject(err);
+                "VALUES (?, ?, ?, ?, ?);",
+            [user_id, username, first_name, last_name, state],
+            (err, results) => {
+                if (err) {
+                    console.log("Error executing query: ", err);
+                    reject(err);
+                }
+                console.log("User added successfully: ", results);
+                resolve();
             }
-            console.log("User added successfully: ", results);
-            resolve();
-        });
+        );
     });
 };

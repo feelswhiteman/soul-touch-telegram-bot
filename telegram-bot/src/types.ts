@@ -21,7 +21,7 @@ export interface ConnectionTimelog {
     time_closed?: string;
 }
 
-export interface ChatInfo {
+export interface UserInfo {
     user_id?: number | string;
     username?: Username;
     first_name?: string;

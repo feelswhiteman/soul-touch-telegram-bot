@@ -1,23 +1,20 @@
 import { pool } from "./pool.js";
 import { ChatId } from "node-telegram-bot-api";
-import { Username, isUsername, ChatInfo } from "../types.js";
+import { Username, isUsername, UserInfo } from "../types.js";
 
 export const pendingUserExists = async (
-    usernameOrChatId: Username | ChatId
+    userInfo: UserInfo
 ): Promise<boolean> => {
     return new Promise((resolve, reject) => {
-        let username: Username | undefined;
-        let chatId: ChatId | undefined;
+        const { user_id, username } = userInfo;
 
-        if (isUsername(usernameOrChatId)) {
-            username = usernameOrChatId;
-        } else {
-            chatId = usernameOrChatId;
+        if (!username && !user_id) {
+            reject(new Error("Either username or user_id should be specified"));
         }
 
         pool.query(
             "SELECT COUNT(*) as count FROM PendingUsers WHERE user_id = ? OR username = ?;",
-            [chatId, username],
+            [user_id, username],
             (err, results: { count: number }[]) => {
                 if (err) {
                     console.log("Error executing query: ", err);
@@ -30,22 +27,20 @@ export const pendingUserExists = async (
 };
 
 export const insertPendingUserIntoDB = async (
-    chat: ChatInfo
+    userInfo: UserInfo
 ): Promise<void> => {
     return new Promise(async (resolve, reject) => {
-        const { user_id: id, username, first_name, last_name } = chat;
+        const { user_id, username, first_name, last_name } = userInfo;
 
-        if (!username && !id) {
-            reject(new Error("Either username or chatId should be specified"));
+        if (!username && !user_id) {
+            reject(new Error("Either username or user_id should be specified"));
         }
 
-        // !username && !id checks if one of this variables is assigned,
-        // so (id || username) should be legal, but typescript doesn't think so
-        if (!(await pendingUserExists(id || username!))) {
+        if (!(await pendingUserExists({ user_id, username }))) {
             pool.query(
                 "INSERT INTO PendingUsers (user_id, username, first_name, last_name) " +
                     "VALUES (?, ?, ?, ?);",
-                [id, username, first_name, last_name],
+                [user_id, username, first_name, last_name],
                 (err, results) => {
                     if (err) {
                         console.log("Error executing query: ", err);
@@ -56,5 +51,23 @@ export const insertPendingUserIntoDB = async (
             );
             resolve();
         }
+    });
+};
+
+export const deletePendingUser = async (userInfo: UserInfo): Promise<void> => {
+    return new Promise((resolve, reject) => {
+        const { user_id, username } = userInfo;
+        pool.query(
+            "DELETE FROM PendingUsers WHERE user_id = ? OR username = ?;",
+            [user_id, username],
+            (err, results) => {
+                if (err) {
+                    console.log("Error executing query: ", err);
+                    reject(err);
+                }
+                console.log("PendingUser added successfully: ", results);
+            }
+        );
+        resolve();
     });
 };
