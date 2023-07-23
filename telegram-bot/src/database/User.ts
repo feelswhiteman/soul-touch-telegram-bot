@@ -56,12 +56,13 @@ export const getUserId = (userInfo: UserInfo): Promise<ChatId | undefined> => {
 
 type ConversationStateResults = { conversation_state: ConversationState }[];
 export const getUserConversationState = (
-    chat_id: ChatId
+    userInfo: UserInfo
 ): Promise<ConversationState> => {
     return new Promise((resolve, reject) => {
+        const { user_id, username } = userInfo;
         pool.query(
-            "SELECT conversation_state FROM User WHERE user_id = ?;",
-            [chat_id],
+            "SELECT conversation_state FROM User WHERE user_id = ? OR username = ?;",
+            [user_id, username],
             (err, results: ConversationStateResults) => {
                 if (err) {
                     console.log("Error executing query: ", err);
@@ -122,7 +123,9 @@ export const insertUserInfoIntoDB = async (
     });
 };
 
-export const getIdFromUser = async (userInfo: UserInfo): Promise<number | undefined> => {
+export const getIdFromUser = async (
+    userInfo: UserInfo
+): Promise<number | undefined> => {
     return new Promise<number | undefined>((resolve, reject) => {
         const { user_id, username } = userInfo;
         pool.query(
@@ -133,8 +136,37 @@ export const getIdFromUser = async (userInfo: UserInfo): Promise<number | undefi
                     console.log("Error executing query: ", err);
                     reject(err);
                 }
-                console.log("Connection updated successfully", results);
                 resolve(results[0]?.id);
+            }
+        );
+    });
+};
+
+export const updateUserInfo = async (userInfo: UserInfo): Promise<void> => {
+    return new Promise<void>((resolve, reject) => {
+        const { user_id, username, first_name, last_name } = userInfo;
+        pool.query(
+            "SELECT id FROM User WHERE user_id = ? OR username = ?;",
+            [user_id, username],
+            (err, results: { id: number }[]) => {
+                if (err) {
+                    console.log("Error executing query: ", err);
+                    reject(err);
+                }
+                const id = results[0].id;
+                pool.query(
+                    "UPDATE User " +
+                        "SET user_id = ?, username = ?, first_name = ?, last_name = ? " +
+                        "WHERE id = ?;",
+                    [user_id, username, first_name, last_name, id],
+                    (err, results) => {
+                        if (err) {
+                            console.log("Error executing query: ", err);
+                            reject(err);
+                        }
+                        resolve();
+                    }
+                );
             }
         );
     });
