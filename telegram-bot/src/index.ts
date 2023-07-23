@@ -1,4 +1,4 @@
-import TelegramBot, { Chat, Contact, Message } from "node-telegram-bot-api";
+import TelegramBot, { Contact, Message } from "node-telegram-bot-api";
 import { ChatId } from "node-telegram-bot-api";
 import dotenv from "dotenv";
 import Moment from "moment";
@@ -143,63 +143,67 @@ const handleStartCommand = async (chatId: ChatId) => {
 };
 
 const handleContactOrUsername = async (
-    msg: Message,
+    userInfo: UserInfo,
     contactOrUsername: Contact | Username
 ) => {
-    let partnerUsername: Username | undefined;
-    let partnerChatId: ChatId | undefined;
-    let partnerInfo: UserInfo | undefined;
+    const { user_id, username, first_name, last_name } = userInfo;
+    if (!user_id) throw Error("Should be user_id specified");
+
+    const partnerInfo: UserInfo = {};
 
     if (isUsername(contactOrUsername)) {
-        partnerUsername = contactOrUsername;
-        partnerChatId = await getUserId(partnerUsername);
+        partnerInfo.username = contactOrUsername;
+        partnerInfo.user_id = await getUserId(partnerInfo);
     } else {
         const contact = contactOrUsername;
         const { first_name, last_name } = contact;
-        partnerChatId = contact.user_id ?? "";
-        partnerInfo = {
-            user_id: partnerChatId,
-            first_name,
-            last_name,
-        };
+        partnerInfo.user_id = contact.user_id;
+        partnerInfo.first_name = first_name;
+        partnerInfo.last_name = last_name;
     }
 
-    setUserConversationState(msg.chat.id, "WAITING_FOR_PARTNER");
+    setUserConversationState(user_id, "WAITING_FOR_PARTNER");
 
-    if (!partnerChatId) {
-        insertPendingUserIntoDB(partnerInfo ?? { username: partnerUsername });
+    if (!partnerInfo.user_id) {
+        insertPendingUserIntoDB(partnerInfo);
         await bot.sendMessage(
-            msg.chat.id,
-            "Ожидаем партнера...\n" +
+            user_id,
+            "Невозомжно прикоснуться к партнеру.\n" +
                 `Пользователь ${
-                    partnerUsername ?? ""
+                    partnerInfo.username ?? ""
                 } должен начать диалог со мной, чтобы я мог отправлять ему сообщения. Скажите ему об этом`
         );
+        setUserConversationState(user_id, "AWAITING_PARTNER_INFORMATION");
     } else {
-        setUserConversationState(partnerChatId, "WAITING_FOR_CONFIRMATION");
-        await bot.sendMessage(msg.chat.id, "Ожидаем партнера...");
+        setUserConversationState(
+            partnerInfo.user_id,
+            "WAITING_FOR_CONFIRMATION"
+        );
+        await bot.sendMessage(user_id, "Ожидаем партнера...");
         bot.sendMessage(
-            partnerChatId,
+            partnerInfo.user_id,
             `К вам хочет прикоснуться ${
-                (msg.chat.username ||
-                    msg.chat.first_name + " " + msg.chat.last_name) ??
+                (username || first_name + " " + last_name) ??
                 " неизвестный пользователь"
             }`
         );
-    }
-    updateConnection(
-        msg.chat.id,
-        partnerChatId || partnerUsername!,
-        "WAITING",
-        {
+        updateConnection(userInfo, partnerInfo, "WAITING", {
             time_requested: Moment().format("YYYY-MM-DD HH:mm:ss"),
-        }
-    );
+        });
+    }
 };
 
 const handleAwaitingPartnerInformationState = async (msg: Message) => {
     const chatId = msg.chat.id;
     const text = msg.text ?? "";
+
+    // TODO: Extract function (msg: Message): ChatInfo
+    const userInfo: UserInfo = {
+        user_id: msg.chat.id,
+        username: `@${msg.from?.username}`,
+        first_name: msg.from?.first_name,
+        last_name: msg.from?.first_name,
+    };
 
     if (!msg.contact && !isUsername(text)) {
         await bot.sendMessage(
@@ -210,20 +214,20 @@ const handleAwaitingPartnerInformationState = async (msg: Message) => {
     }
 
     if (msg.contact) {
-        await handleContactOrUsername(msg, msg.contact);
+        await handleContactOrUsername(userInfo, msg.contact);
     } else if (isUsername(text)) {
-        await handleContactOrUsername(msg, text);
+        await handleContactOrUsername(userInfo, text);
     }
 };
 
 const updateConnection = async (
-    user: ChatId,
-    partner: ChatId | Username,
+    userInfo: UserInfo,
+    partnerInfo: UserInfo,
     state: ConnectionState,
     timelog: ConnectionTimelog
 ) => {
-    await insertConnectionIntoDB(user, partner);
-    await setConnectionState(user, partner, state);
-    await setConnectionTimelog(user, partner, timelog);
+    await insertConnectionIntoDB(userInfo, partnerInfo);
+    await setConnectionState(userInfo, partnerInfo, state);
+    await setConnectionTimelog(userInfo, partnerInfo, timelog);
     console.log(timelog);
 };
