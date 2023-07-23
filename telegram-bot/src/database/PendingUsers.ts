@@ -16,7 +16,7 @@ export const pendingUserExists = async (
         }
 
         pool.query(
-            "SELECT COUNT(*) as count FROM PendingUsers WHERE chat_id = ? OR username = ?;",
+            "SELECT COUNT(*) as count FROM PendingUsers WHERE user_id = ? OR username = ?;",
             [chatId, username],
             (err, results: { count: number }[]) => {
                 if (err) {
@@ -33,7 +33,7 @@ export const insertPendingUserIntoDB = async (
     chat: ChatInfo
 ): Promise<void> => {
     return new Promise(async (resolve, reject) => {
-        const { id, username, first_name, last_name } = chat;
+        const { user_id: id, username, first_name, last_name } = chat;
 
         if (!username && !id) {
             reject(new Error("Either username or chatId should be specified"));
@@ -43,7 +43,7 @@ export const insertPendingUserIntoDB = async (
         // so (id || username) should be legal, but typescript doesn't think so
         if (!(await pendingUserExists(id || username!))) {
             pool.query(
-                "INSERT INTO PendingUsers (chat_id, username, first_name, last_name) " +
+                "INSERT INTO PendingUsers (user_id, username, first_name, last_name) " +
                     "VALUES (?, ?, ?, ?);",
                 [id, username, first_name, last_name],
                 (err, results) => {

@@ -1,6 +1,6 @@
 import { pool } from "./pool.js";
 import { ChatId } from "node-telegram-bot-api";
-import { Username, isUsername, ConnectionState } from "../types.js";
+import { Username, isUsername, ConnectionState, ChatInfo } from "../types.js";
 
 export const connectionExists = async (
     userChatId: ChatId,
@@ -19,7 +19,7 @@ export const connectionExists = async (
 
         pool.query(
             "SELECT COUNT(*) as count FROM Connections WHERE user = ? AND partner = ? " +
-            (state ? `AND connection_state = ?;` : ";"),
+                (state ? `AND connection_state = ?;` : ";"),
             [userChatId, partnerChatId || partnerUsername, state],
             (err, results: { count: number }[]) => {
                 if (err) {
@@ -116,5 +116,11 @@ export const setConnectionState = async (
                 resolve();
             }
         );
+    });
+};
+
+export const getAllConnections = async (): Promise<ChatInfo[]> => {
+    return new Promise((resolve, reject) => {
+
     });
 };

@@ -22,7 +22,7 @@ export interface ConnectionTimelog {
 }
 
 export interface ChatInfo {
-    id?: number | string;
+    user_id?: number | string;
     username?: Username;
     first_name?: string;
     last_name?: string;

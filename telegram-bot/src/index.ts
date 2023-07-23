@@ -7,7 +7,7 @@ import {
     getChatConversationState,
     setChatConversationState,
     insertChatInfoIntoDB,
-} from "./database/Chat.js";
+} from "./database/User.js";
 import { insertPendingUserIntoDB } from "./database/PendingUsers.js";
 import {
     connectionExists,
@@ -31,7 +31,7 @@ const bot = new TelegramBot(token, { polling: true });
 const chatToChatInfo = (chat: Chat): ChatInfo => {
     const { id, username, first_name, last_name } = chat;
     const chatInfo: ChatInfo = {
-        id,
+        user_id: id,
         first_name,
         last_name,
     };
@@ -54,14 +54,40 @@ bot.on("message", async (msg) => {
 
     if (text === "/cancel") {
         // TODO: On cancel change state in database
-        await bot.sendMessage(chatId, "Привет, я бот для касаний.\n/touch - Прикоснуться к кому-то\n");
+        await bot.sendMessage(
+            chatId,
+            "Привет, я бот для касаний.\n/touch - Прикоснуться к кому-то\n"
+        );
         await setChatConversationState(chatId, "DEFAULT");
         return;
     }
 
+    if (text === "/list") {
+        // TODO:
+        await bot.sendMessage(
+            chatId,
+            "Список людей, которые хотят прикоснуться к тебе: ",
+            {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: "Google", callback_data: "Google" },
+                            { text: "Google", callback_data: "Google" },
+                        ],
+                        [
+                            { text: "Google", callback_data: "Google" },
+                        ],
+                    ],
+                },
+            }
+        );
+    }
 
     if (currentState === "WAITING_FOR_PARTNER") {
-        await bot.sendMessage(chatId, "Ожидаем партнера... Чтобы прекратить - /cancel");
+        await bot.sendMessage(
+            chatId,
+            "Ожидаем партнера... Чтобы прекратить - /cancel"
+        );
         return;
     }
 
@@ -79,7 +105,6 @@ bot.on("message", async (msg) => {
         await handleAwaitingPartnerInformationState(msg);
         return;
     }
-
 });
 
 const handleDefaultState = async (msg: Message) => {
@@ -92,10 +117,7 @@ const handleDefaultState = async (msg: Message) => {
         );
         await setChatConversationState(chatId, "AWAITING_PARTNER_INFORMATION");
     } else if (text === "ГРУППОВЫЕ КАСАНИЯ") {
-        await bot.sendMessage(
-            chatId,
-            "Еще в разработке..."
-        );
+        await bot.sendMessage(chatId, "Еще в разработке...");
     } else {
         await bot.sendMessage(chatId, "Выбери варианты из предложенного");
     }
@@ -103,15 +125,19 @@ const handleDefaultState = async (msg: Message) => {
 
 const handleStartCommand = async (chatId: ChatId) => {
     setChatConversationState(chatId, "DEFAULT");
-    await bot.sendMessage(chatId, "Приватные касания - укажи человека и мы наладим с ним связь.\nГрупповые касания еще в разработке...", {
-        reply_markup: {
-            keyboard: [
-                [{ text: "Приватные касания" }],
-                [{ text: "ГРУППОВЫЕ КАСАНИЯ" }],
-            ],
-            resize_keyboard: true,
-        },
-    });
+    await bot.sendMessage(
+        chatId,
+        "Приватные касания - укажи человека и мы наладим с ним связь.\nГрупповые касания еще в разработке...",
+        {
+            reply_markup: {
+                keyboard: [
+                    [{ text: "Приватные касания" }],
+                    [{ text: "ГРУППОВЫЕ КАСАНИЯ" }],
+                ],
+                resize_keyboard: true,
+            },
+        }
+    );
 };
 
 const handleContactOrUsername = async (
@@ -130,7 +156,7 @@ const handleContactOrUsername = async (
         const { first_name, last_name } = contact;
         partnerChatId = contact.user_id ?? "";
         partnerInfo = {
-            id: partnerChatId,
+            user_id: partnerChatId,
             first_name,
             last_name,
         };
