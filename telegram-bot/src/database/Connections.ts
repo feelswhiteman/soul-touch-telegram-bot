@@ -1,26 +1,20 @@
 import { pool } from "./pool.js";
-import { ChatId } from "node-telegram-bot-api";
-import { Username, isUsername, ConnectionState, UserInfo } from "../types.js";
+import { ConnectionState, UserInfo } from "../types.js";
+import { getIdFromUser } from "./User.js"
 
 export const connectionExists = async (
-    userChatId: ChatId,
-    partnerUsernameOrChatId: Username | ChatId,
+    userInfo: UserInfo,
+    partnerInfo: UserInfo,
     state?: ConnectionState
 ): Promise<boolean> => {
-    return new Promise((resolve, reject) => {
-        let partnerUsername: Username | undefined;
-        let partnerChatId: ChatId | undefined;
-
-        if (isUsername(partnerUsernameOrChatId)) {
-            partnerUsername = partnerUsernameOrChatId;
-        } else {
-            partnerChatId = partnerUsernameOrChatId;
-        }
+    return new Promise(async (resolve, reject) => {
+        const userId = await getIdFromUser(userInfo);
+        const partnerId = await getIdFromUser(partnerInfo);
 
         pool.query(
             "SELECT COUNT(*) as count FROM Connections WHERE user = ? AND partner = ? " +
                 (state ? `AND connection_state = ?;` : ";"),
-            [userChatId, partnerChatId || partnerUsername, state],
+            [userId, partnerId, state],
             (err, results: { count: number }[]) => {
                 if (err) {
                     console.log("Error executing query: ", err);
@@ -33,20 +27,27 @@ export const connectionExists = async (
 };
 
 export const insertConnectionIntoDB = async (
-    user: ChatId,
-    partner: ChatId | Username
+    userInfo: UserInfo,
+    partnerInfo: UserInfo
 ): Promise<void> => {
     return new Promise(async (resolve, reject) => {
-        if (await connectionExists(user, partner)) resolve();
+        if (await connectionExists(userInfo, partnerInfo)) resolve();
+
+        const userId = await getIdFromUser(userInfo);
+        const partnerId = await getIdFromUser(partnerInfo);
+
         pool.query(
             "INSERT INTO Connections (user, partner, connection_state) VALUES (?, ?, ?);",
-            [user, partner, "UNDEFINED"],
+            [userId, partnerId, "UNDEFINED"],
             async (err, results) => {
                 if (err) {
                     console.log("Error executing query: ", err);
                     reject(err);
                 }
-                const connectionId = await getLastConnectionId(user, partner);
+                const connectionId = await getLastConnectionId(
+                    userInfo,
+                    partnerInfo
+                );
                 await assignConnectionTimelog(connectionId);
                 console.log("Connection added successfully");
             }
@@ -55,13 +56,16 @@ export const insertConnectionIntoDB = async (
 };
 
 export const getLastConnectionId = async (
-    user: ChatId,
-    partner: ChatId | Username
+    userInfo: UserInfo,
+    partnerInfo: UserInfo
 ): Promise<number> => {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
+        const userId = await getIdFromUser(userInfo);
+        const partnerId = await getIdFromUser(partnerInfo);
+
         pool.query(
             "SELECT MAX(id) as lastId FROM Connections WHERE user = ? AND partner = ?;",
-            [user, partner],
+            [userId, partnerId],
             (err, results) => {
                 if (err) {
                     console.log("Error executing query: ", err);
@@ -98,15 +102,18 @@ export const assignConnectionTimelog = async (
 };
 
 export const setConnectionState = async (
-    user: ChatId,
-    partner: ChatId | Username,
+    userInfo: UserInfo,
+    partnerInfo: UserInfo,
     state: ConnectionState
 ): Promise<void> => {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
+        const userId = await getIdFromUser(userInfo);
+        const partnerId = await getIdFromUser(partnerInfo);
+
         pool.query(
             "UPDATE Connections SET connection_state = ? " +
                 "WHERE user = ? AND partner = ?",
-            [state, user, partner],
+            [state, userId, partnerId],
             (err, results) => {
                 if (err) {
                     console.log("Error executing query: ", err);
@@ -120,7 +127,5 @@ export const setConnectionState = async (
 };
 
 export const getAllConnections = async (): Promise<UserInfo[]> => {
-    return new Promise((resolve, reject) => {
-
-    });
+    return new Promise((resolve, reject) => {});
 };
